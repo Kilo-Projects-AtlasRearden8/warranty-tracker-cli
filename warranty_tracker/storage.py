@@ -68,3 +68,14 @@ class WarrantyStore:
             if item.id == item_id:
                 return item
         return None
+
+    def update(self, item_id: str, **fields) -> Optional[WarrantyItem]:
+        items = self.load()
+        for index, item in enumerate(items):
+            if item.id == item_id:
+                data = item.to_dict()
+                data.update(fields)
+                items[index] = WarrantyItem.from_dict(data)
+                self.save(items)
+                return items[index]
+        return None

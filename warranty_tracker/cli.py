@@ -47,9 +47,21 @@ def _build_parser() -> argparse.ArgumentParser:
     list_p = sub.add_parser("list", help="List warranty items")
     list_p.add_argument("--category", default=None, help="Filter by category")
     list_p.add_argument("--expired", action="store_true", help="Show only expired items")
+    list_p.add_argument("--expiring", action="store_true", help="Show only items expiring within 30 days")
 
     remove_p = sub.add_parser("remove", help="Remove a warranty item by id")
     remove_p.add_argument("--id", required=True, help="Item id")
+
+    edit_p = sub.add_parser("edit", help="Edit an existing warranty item by id")
+    edit_p.add_argument("--id", required=True, help="Item id")
+    edit_p.add_argument("--name", default=None, help="Item name")
+    edit_p.add_argument("--category", default=None, help="Category")
+    edit_p.add_argument("--purchased", type=_parse_date, default=None, help="Purchase date YYYY-MM-DD")
+    edit_p.add_argument("--warranty-years", type=int, default=None, help="Warranty length in years")
+    edit_p.add_argument("--warranty-months", type=int, default=None, help="Additional warranty months")
+    edit_p.add_argument("--warranty-days", type=int, default=None, help="Additional warranty days")
+    edit_p.add_argument("--serial", default=None, help="Serial number")
+    edit_p.add_argument("--notes", default=None, help="Notes")
 
     export_p = sub.add_parser("export", help="Export items to CSV or JSON")
     export_p.add_argument("--format", choices=["csv", "json"], default="csv", help="Export format (default: csv)")
@@ -102,9 +114,11 @@ def cmd_list(args: argparse.Namespace, store: WarrantyStore) -> int:
     items = store.load()
     if args.category:
         items = [item for item in items if item.category == args.category]
+    today = date.today()
     if args.expired:
-        today = date.today()
         items = [item for item in items if item.is_expired(today)]
+    if args.expiring:
+        items = [item for item in items if item.is_expiring_soon(30, today) and not item.is_expired(today)]
     items.sort(key=lambda item: (item.purchased, item.name))
     _print_table(items)
     return 0
@@ -116,6 +130,37 @@ def cmd_remove(args: argparse.Namespace, store: WarrantyStore) -> int:
         return 0
     print(f"No warranty item found with id {args.id}.", file=sys.stderr)
     return 1
+
+
+def cmd_edit(args: argparse.Namespace, store: WarrantyStore) -> int:
+    fields = {}
+    if args.name is not None:
+        fields["name"] = args.name
+    if args.category is not None:
+        fields["category"] = args.category
+    if args.purchased is not None:
+        fields["purchased"] = args.purchased
+    if args.warranty_years is not None:
+        fields["warranty_years"] = args.warranty_years
+    if args.warranty_months is not None:
+        fields["warranty_months"] = args.warranty_months
+    if args.warranty_days is not None:
+        fields["warranty_days"] = args.warranty_days
+    if args.serial is not None:
+        fields["serial"] = args.serial
+    if args.notes is not None:
+        fields["notes"] = args.notes
+
+    if not fields:
+        print("No fields to update.", file=sys.stderr)
+        return 1
+
+    updated = store.update(args.id, **fields)
+    if updated is None:
+        print(f"No warranty item found with id {args.id}.", file=sys.stderr)
+        return 1
+    print(f"Updated warranty item {updated.id} for '{updated.name}' (expires {updated.expiry_date().isoformat()}).")
+    return 0
 
 
 def cmd_export(args: argparse.Namespace, store: WarrantyStore) -> int:
@@ -178,6 +223,7 @@ _COMMANDS = {
     "add": cmd_add,
     "list": cmd_list,
     "remove": cmd_remove,
+    "edit": cmd_edit,
     "export": cmd_export,
     "alerts": cmd_alerts,
 }
